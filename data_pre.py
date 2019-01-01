@@ -9,11 +9,24 @@ import datetime
 from dateutil.relativedelta import relativedelta
 import os
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif']=['SimHei'] #用来正常显示中文标签
+plt.rcParams['axes.unicode_minus']=False #用来正常显示负号
 #显示所有列
 pd.set_option('display.max_columns', None)
 #显示所有行
 pd.set_option('display.max_rows', None)
 #设置value的显示长度为100，默认为50
+def plt_null_col(data):
+    train_isnull = data.isnull().mean()  # 缺失值的比例
+    train_isnull=train_isnull[train_isnull>0].sort_values(ascending=False)
+    train_isnull.plot.bar(figsize=(12, 8), title='数据缺失情况')
+    plt.show()
+def plt_null_row(data):
+    plt.figure(figsize=(12, 8))
+    plt.scatter(np.arange(data.shape[0]),
+    data.isnull().sum(axis=1).sort_values().values)  # 每行缺失的个数
+    plt.show()
 pd.set_option('max_colwidth',100)
 path=os.getcwd()+'/application.csv'
 data=pd.read_csv(path,header=0)
@@ -24,6 +37,9 @@ data['term']=data['term'].apply(lambda x:int(x.replace('months',"")))
 data['y']=data['loan_status'].apply(lambda x: int(x=='Charged Off'))
 # print(data.groupby(['y'])['member_id'].count())
 data=data.loc[data.term==36]
+print(data.shape)
+# plt_null_col(data)
+plt_null_row(data)
 # print(data.groupby(['y'])['member_id'].count())
 train_data,test_data=train_test_split(data,test_size=0.4)
 train_data['int_rate_clean']=train_data.loc[:,'int_rate'].map(lambda x: float(x.replace('%',''))/100)
