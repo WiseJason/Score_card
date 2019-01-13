@@ -6,7 +6,6 @@ import numpy as np
 import re
 import time
 import datetime
-from dateutil.relativedelta import relativedelta
 import os
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
@@ -17,17 +16,20 @@ pd.set_option('display.max_columns', None)
 #显示所有行
 pd.set_option('display.max_rows', None)
 #设置value的显示长度为100，默认为50
+pd.set_option('max_colwidth',100)
+
 def plt_null_col(data):
     train_isnull = data.isnull().mean()  # 缺失值的比例
+    print(train_isnull[train_isnull>0])#查看有缺失的数据
     train_isnull=train_isnull[train_isnull>0].sort_values(ascending=False)
     train_isnull.plot.bar(figsize=(12, 8), title='数据缺失情况')
-    plt.show()
+    # plt.show()
 def plt_null_row(data):
     plt.figure(figsize=(12, 8))
     plt.scatter(np.arange(data.shape[0]),
     data.isnull().sum(axis=1).sort_values().values)  # 每行缺失的个数
     plt.show()
-pd.set_option('max_colwidth',100)
+
 path=os.getcwd()+'/application.csv'
 data=pd.read_csv(path,header=0)
 # print(data.head())
@@ -38,8 +40,8 @@ data['y']=data['loan_status'].apply(lambda x: int(x=='Charged Off'))
 # print(data.groupby(['y'])['member_id'].count())
 data=data.loc[data.term==36]
 print(data.shape)
-# plt_null_col(data)
-plt_null_row(data)
+plt_null_col(data)
+# plt_null_row(data)
 # print(data.groupby(['y'])['member_id'].count())
 train_data,test_data=train_test_split(data,test_size=0.4)
 train_data['int_rate_clean']=train_data.loc[:,'int_rate'].map(lambda x: float(x.replace('%',''))/100)
@@ -58,7 +60,7 @@ def DescExisting(x):
         return 'no desc'
     else:
         return 'desc'
-train_data['desc_clearn']=train_data['desc'].map(DescExisting)
+train_data['desc_clean']=train_data['desc'].map(DescExisting)
 def datemanage(x,format):
     if str(x)=='nan':
         return datetime.datetime.strptime('9900-1','%Y-%m')
@@ -66,7 +68,7 @@ def datemanage(x,format):
         return datetime.datetime.strptime(x,format)
 train_data['app_date_clean']=train_data['issue_d'].map(lambda x:datemanage(x,'%Y/%m/%d'))
 train_data['earliest_cr_line_clean']=train_data['earliest_cr_line'].map(lambda x:datemanage(x,'%Y/%m/%d'))
-def MakeupMissing(x):
+def MakeupMissing(x):#用-1填充空值
     if np.isnan(x):
         return -1
     else:
@@ -74,7 +76,6 @@ def MakeupMissing(x):
 train_data['mths_since_last_delinq_clean'] = train_data['mths_since_last_delinq'].map(lambda x:MakeupMissing(x))
 train_data['mths_since_last_record_clean'] = train_data['mths_since_last_record'].map(lambda x:MakeupMissing(x))
 train_data['pub_rec_bankruptcies_clean'] = train_data['pub_rec_bankruptcies'].map(lambda x:MakeupMissing(x))
-
 train_data['limit_income'] = train_data.apply(lambda x: x.loan_amnt / x.annual_inc, axis = 1)
 
 
@@ -87,21 +88,38 @@ def MonthGap(earlyDate,lateDate):
     else:
         return 0
 train_data['earliest_cr_to_app'] = train_data.apply(lambda x: MonthGap(x.earliest_cr_line_clean,x.app_date_clean), axis = 1)
-
-
+#卡方分箱
+#汇总一下前面的要求：不超过5箱，分好之后变量关联好坏比单调，每箱同时包含好坏样本，特殊值-1这类的，可以单独一箱；
+#连续型变量可以直接分箱；
+# 如果遇到类别型变量，在类别较多的情况下，需要先进行bad rate编码，再分箱；如果类别少：1、每种类别同时包含好坏样本，无需分箱；2、有类别只包含好坏样本的一种，需要合并。
+#数值变量：连续变量
 num_features = ['int_rate_clean','emp_length_clean','annual_inc', 'dti', 'delinq_2yrs', 'earliest_cr_to_app','inq_last_6mths', \
                 'mths_since_last_record_clean', 'mths_since_last_delinq_clean','open_acc','pub_rec','total_acc']
+#类别变量：离散变量
 cat_features = ['home_ownership', 'verification_status','desc_clean', 'purpose', 'zip_code','addr_state','pub_rec_bankruptcies_clean']
-more_value_features=[]
-less_value_features=[]
+#对离散变量进行处理，如果变量数不超过5个就不分箱，如果超过5个就需要分箱
+def cat_feature(cat_features):
+    more_value_features = []
+    less_value_features = []
+    for var in cat_features:
+        valueCounts=len(train_data[var].unique())
+        if valueCounts>5:
+            more_value_features.append(var)#超过5个需要处理
+        else:
+            less_value_features.append(var)
+    return more_value_features,less_value_features
+more_value_features=cat_feature(cat_features)[0]
+less_value_features=cat_feature(cat_features)[1]
+print(more_value_features)
+print(less_value_features)
 
-for var in cat_features:
-    valueCounts=len(set(train_data[var]))
-    if valueCounts>5:
-        more_value_features.append(var)
-    else:
-        less_value_features.append(var)
 
+
+
+
+
+
+"""
 def BinbadRate(df,col,target,grantRatwIndicator=0):
     total=df.groupby([col])[target].count()
     total=pd.DataFrame({'total':total})
@@ -163,3 +181,4 @@ for col in more_value_features:
     train_data[col + '_br_encoding'] = br_encoding['encoding']
     br_encoding_dict[col] = br_encoding['bad_rate']
     num_features.append(col + '_br_encoding')
+"""
